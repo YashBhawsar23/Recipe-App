@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from "react";
 import { Search } from "lucide-react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 const Home = () => {
+  const navigate = useNavigate();
   const [recipes, setRecipes] = useState([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState([
     "Breakfast",
     "Lunch",
@@ -16,9 +17,182 @@ const Home = () => {
   ]);
   const [selectedCategory, setSelectedCategory] = useState("");
 
-  // Sample recipe data - in a real app, this would come from an API
+  // Spoonacular API key
+  const API_KEY = "7871aee4228c46d7847f67c65ec4d48c";
+  const BASE_URL = "https://api.spoonacular.com";
+
+  // Fetch initial popular recipes when component mounts
   useEffect(() => {
-    const sampleRecipes = [
+    fetchPopularRecipes();
+  }, []);
+
+  // Fetch recipes by category when selectedCategory changes
+  useEffect(() => {
+    if (selectedCategory) {
+      fetchRecipesByCategory(selectedCategory);
+    } else {
+      fetchPopularRecipes();
+    }
+  }, [selectedCategory]);
+
+  const fetchPopularRecipes = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${BASE_URL}/recipes/random?number=6&apiKey=${API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.recipes) {
+        const formattedRecipes = data.recipes.map((recipe) => ({
+          id: recipe.id,
+          title: recipe.title,
+          image: recipe.image || "/api/placeholder/300/200",
+          time: `${recipe.readyInMinutes} min`,
+          difficulty: getDifficultyLevel(recipe.readyInMinutes),
+          rating: recipe.spoonacularScore
+            ? (recipe.spoonacularScore / 20).toFixed(1)
+            : 4.5,
+          isFavorite: false,
+        }));
+        setRecipes(formattedRecipes);
+      }
+    } catch (error) {
+      console.error("Error fetching popular recipes:", error);
+      // Fall back to sample data in case of API error
+      setRecipes(getSampleRecipes());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchRecipesByCategory = async (category) => {
+    setLoading(true);
+    try {
+      const categoryTagMap = {
+        Breakfast: "breakfast",
+        Lunch: "lunch",
+        Dinner: "dinner",
+        Dessert: "dessert",
+        Vegetarian: "vegetarian",
+        "Quick & Easy": "quick",
+      };
+
+      const tag = categoryTagMap[category] || category.toLowerCase();
+
+      const response = await fetch(
+        `${BASE_URL}/recipes/complexSearch?query=${tag}&number=6&apiKey=${API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.results) {
+        const detailedRecipes = await Promise.all(
+          data.results.map(async (recipePreview) => {
+            try {
+              const detailResponse = await fetch(
+                `${BASE_URL}/recipes/${recipePreview.id}/information?apiKey=${API_KEY}`
+              );
+              const recipeDetail = await detailResponse.json();
+
+              return {
+                id: recipeDetail.id,
+                title: recipeDetail.title,
+                image: recipeDetail.image || "/api/placeholder/300/200",
+                time: `${recipeDetail.readyInMinutes} min`,
+                difficulty: getDifficultyLevel(recipeDetail.readyInMinutes),
+                rating: recipeDetail.spoonacularScore
+                  ? (recipeDetail.spoonacularScore / 20).toFixed(1)
+                  : 4.5,
+                isFavorite: false,
+              };
+            } catch (error) {
+              console.error(
+                `Error fetching details for recipe ${recipePreview.id}:`,
+                error
+              );
+              return null;
+            }
+          })
+        );
+
+        setRecipes(detailedRecipes.filter((recipe) => recipe !== null));
+      }
+    } catch (error) {
+      console.error("Error fetching recipes by category:", error);
+      // Fall back to sample data
+      setRecipes(getSampleRecipes());
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSearch = async (e) => {
+    e.preventDefault();
+    if (!searchQuery.trim()) return;
+
+    setLoading(true);
+    try {
+      const response = await fetch(
+        `${BASE_URL}/recipes/complexSearch?query=${searchQuery}&number=6&apiKey=${API_KEY}`
+      );
+      const data = await response.json();
+
+      if (data.results) {
+        const detailedRecipes = await Promise.all(
+          data.results.map(async (recipePreview) => {
+            try {
+              const detailResponse = await fetch(
+                `${BASE_URL}/recipes/${recipePreview.id}/information?apiKey=${API_KEY}`
+              );
+              const recipeDetail = await detailResponse.json();
+
+              return {
+                id: recipeDetail.id,
+                title: recipeDetail.title,
+                image: recipeDetail.image || "/api/placeholder/300/200",
+                time: `${recipeDetail.readyInMinutes} min`,
+                difficulty: getDifficultyLevel(recipeDetail.readyInMinutes),
+                rating: recipeDetail.spoonacularScore
+                  ? (recipeDetail.spoonacularScore / 20).toFixed(1)
+                  : 4.5,
+                isFavorite: false,
+              };
+            } catch (error) {
+              console.error(
+                `Error fetching details for recipe ${recipePreview.id}:`,
+                error
+              );
+              return null;
+            }
+          })
+        );
+
+        setRecipes(detailedRecipes.filter((recipe) => recipe !== null));
+      }
+    } catch (error) {
+      console.error("Error searching recipes:", error);
+      // Fall back to filtered sample data
+      const filteredSamples = getSampleRecipes().filter((recipe) =>
+        recipe.title.toLowerCase().includes(searchQuery.toLowerCase())
+      );
+      setRecipes(
+        filteredSamples.length > 0 ? filteredSamples : getSampleRecipes()
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Helper function to determine difficulty based on cooking time
+  const getDifficultyLevel = (minutes) => {
+    if (minutes < 20) return "Easy";
+    if (minutes < 40) return "Medium";
+    return "Hard";
+  };
+
+  // Function to get sample recipes as fallback
+  const getSampleRecipes = () => {
+    return [
       {
         id: 1,
         title: "Classic Spaghetti Carbonara",
@@ -26,7 +200,7 @@ const Home = () => {
         time: "30 min",
         difficulty: "Medium",
         rating: 4.8,
-        isFavorite: true,
+        isFavorite: false,
       },
       {
         id: 2,
@@ -44,7 +218,7 @@ const Home = () => {
         time: "25 min",
         difficulty: "Easy",
         rating: 4.6,
-        isFavorite: true,
+        isFavorite: false,
       },
       {
         id: 4,
@@ -71,22 +245,9 @@ const Home = () => {
         time: "20 min",
         difficulty: "Easy",
         rating: 4.4,
-        isFavorite: true,
+        isFavorite: false,
       },
     ];
-
-    setRecipes(sampleRecipes);
-  }, []);
-
-  const handleSearch = (e) => {
-    e.preventDefault();
-    setLoading(true);
-
-    // Simulate API call
-    setTimeout(() => {
-      setLoading(false);
-      // In a real app, you would filter recipes based on the search query
-    }, 1000);
   };
 
   const toggleFavorite = (id) => {
@@ -97,6 +258,11 @@ const Home = () => {
           : recipe
       )
     );
+  };
+
+  // Function to view recipe details
+  const viewRecipeDetails = (id) => {
+    navigate(`/recipe/${id}`);
   };
 
   return (
@@ -215,12 +381,22 @@ const Home = () => {
       {/* Recipe Cards */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <h3 className="text-2xl font-bold text-gray-900 mb-6">
-          Popular Recipes
+          {searchQuery && !loading
+            ? `Results for "${searchQuery}"`
+            : selectedCategory
+            ? `${selectedCategory} Recipes`
+            : "Popular Recipes"}
         </h3>
 
         {loading ? (
           <div className="flex justify-center items-center py-12">
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-red-500"></div>
+          </div>
+        ) : recipes.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-lg text-gray-600">
+              No recipes found. Try a different search term or category.
+            </p>
           </div>
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -289,7 +465,10 @@ const Home = () => {
                   </div>
                 </div>
                 <div className="px-4 pb-4">
-                  <button className="w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-md font-medium transition-colors duration-300">
+                  <button
+                    onClick={() => viewRecipeDetails(recipe.id)}
+                    className="w-full bg-red-500 hover:bg-red-600 text-white py-2 rounded-md font-medium transition-colors duration-300"
+                  >
                     View Recipe
                   </button>
                 </div>
@@ -298,40 +477,6 @@ const Home = () => {
           </div>
         )}
       </div>
-
-      {/* Featured Categories */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <h3 className="text-2xl font-bold text-gray-900 mb-6">
-          Explore by Category
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {[
-            { name: "Breakfast", image: "/api/placeholder/200/200" },
-            { name: "Lunch", image: "/api/placeholder/200/200" },
-            { name: "Dinner", image: "/api/placeholder/200/200" },
-            { name: "Desserts", image: "/api/placeholder/200/200" },
-            { name: "Vegetarian", image: "/api/placeholder/200/200" },
-            { name: "Quick Meals", image: "/api/placeholder/200/200" },
-          ].map((category) => (
-            <div
-              key={category.name}
-              className="relative rounded-lg overflow-hidden group cursor-pointer"
-            >
-              <img
-                src={category.image}
-                alt={category.name}
-                className="w-full h-32 object-cover"
-              />
-              <div className="absolute inset-0 bg-black bg-opacity-40 flex items-center justify-center group-hover:bg-opacity-50 transition-all duration-300">
-                <span className="text-white font-medium text-lg">
-                  {category.name}
-                </span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
       {/* Footer */}
       <footer className="bg-gray-800 text-white mt-12">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -341,6 +486,7 @@ const Home = () => {
               <p className="text-gray-300">
                 Find, save, and share the best recipes from around the world.
               </p>
+              <p className="text-gray-300 mt-2">Powered by Spoonacular API</p>
             </div>
             <div>
               <h4 className="text-lg font-bold mb-4">Quick Links</h4>
